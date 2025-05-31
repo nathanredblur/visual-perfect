@@ -10,7 +10,7 @@
  */
 import type { ProjectAnnotations, Renderer } from "storybook/internal/types";
 
-import { KEY } from "./constants";
+import { ADDON_ID } from "./constants";
 import { withGlobals } from "./withGlobals";
 import { withRoundTrip } from "./withRoundTrip";
 
@@ -22,7 +22,7 @@ import { withRoundTrip } from "./withRoundTrip";
 const preview: ProjectAnnotations<Renderer> = {
   decorators: [withGlobals, withRoundTrip],
   initialGlobals: {
-    [KEY]: false,
+    [ADDON_ID]: false,
   },
 };
 
