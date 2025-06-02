@@ -104,6 +104,7 @@ export default defineConfig(async (options) => {
       entry: nodeEntries,
       format: ["cjs"],
       platform: "node",
+      external: ["playwright-core"],
     });
   }
 

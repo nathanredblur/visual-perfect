@@ -21,6 +21,12 @@ npm install --save-dev storybook-addon-visual-perfect
 yarn add --dev storybook-addon-visual-perfect
 ```
 
+then install playwrite deplendencies
+
+```sh
+NODE_TLS_REJECT_UNAUTHORIZED=0 npx playwright install --with-deps
+```
+
 Then, register it as an addon in your `.storybook/main.js` or `.storybook/main.ts`:
 
 ```ts
@@ -71,3 +77,19 @@ _(Information about how to contribute to this addon can be added here.)_
 ## License
 
 _(License information can be added here.)_
+
+### Notes
+
+- vitest is integrated with storybook so we can run visual testing with jest instead?
+  https://www.youtube.com/watch?v=8t5wxrFpCQY
+  npx storybook add @storybook/addon-vitest
+  https://storybook.js.org/docs/writing-tests/integrations/vitest-addon
+- I figureout how to integrate preset watching this example https://github.com/repobuddy/visual-testing/blob/main/packages/storybook-addon-vis/.storybook/local-preset.cjs
+- inspired by https://github.com/repobuddy/visual-testing
+
+### Next steps
+
+- try to use only playwrite internal libraries for pixel match.
+- load image automatically on change between stories
+- change size of the image to only size of the component.
+- integrate pixel perfect tools https://www.welldonecode.com/perfectpixel/

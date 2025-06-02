@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 
 import { Button } from "./Button";
-import { fn } from "storybook/test";
+import { expect, fn } from "storybook/test";
 
 // More on how to set up stories at: https://storybook.js.org/docs/react/writing-stories/introduction#default-export
 const meta: Meta<typeof Button> = {
@@ -53,5 +53,16 @@ export const Small: Story = {
   args: {
     size: "small",
     label: "Button",
+  },
+};
+
+export const Disabled: Story = {
+  args: {
+    disabled: true,
+    label: "Button",
+  },
+  play: async ({ canvas }) => {
+    const button = await canvas.getByRole("button");
+    await expect(button).toHaveAttribute("disabled");
   },
 };

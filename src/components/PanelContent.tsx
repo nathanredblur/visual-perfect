@@ -1,5 +1,5 @@
 import React, { useState, useCallback, Fragment } from "react";
-import { useChannel, useStorybookApi } from "storybook/manager-api";
+import { useStorybookApi } from "storybook/manager-api";
 import { styled } from "storybook/theming";
 import {
   Button,
@@ -7,7 +7,9 @@ import {
   ScrollArea,
   Separator,
 } from "storybook/internal/components";
-import { EVENTS } from "../constants";
+import { ADDON_ID, EVENTS } from "../constants";
+
+const API_BASE_PATH = "/__visual_perfect_api__";
 
 // Using generic styles instead of theme-based
 const PanelWrapper = styled.div`
@@ -81,47 +83,98 @@ export const PanelContent: React.FC<PanelContentProps> = ({ active }) => {
   });
   const api = useStorybookApi();
 
-  const emit = useChannel({
-    [EVENTS.VISUAL_TEST_RESULT]: (data: VisualTestResult) => setResult(data),
-    [EVENTS.NEW_BASELINE_CREATED]: (data: { message: string }) =>
-      setResult({ status: "new", message: data.message, baselineExists: true }),
-    [EVENTS.BASELINE_ACCEPTED]: (data: { message: string }) =>
-      setResult({
-        status: "success",
-        message: data.message,
-        baselineExists: true,
-      }),
-    [EVENTS.ERROR_OCCURRED]: (data: { message: string }) =>
-      setResult({ status: "error", message: data.message }),
-  });
-
   const getCurrentStoryId = useCallback(() => {
     if (!api) return null;
     const urlState = api.getUrlState();
     return urlState ? urlState.storyId : null;
   }, [api]);
 
-  const handleRunTest = useCallback(() => {
+  const handleRunTest = useCallback(async () => {
     const storyId = getCurrentStoryId();
     if (storyId) {
       setResult({
         status: "running",
-        message: "Capturing screenshot and comparing...",
+        message: "Capturing and comparing with Playwright...",
+        diffImage: undefined,
+        newImage: undefined,
       });
-      emit(EVENTS.REQUEST_VISUAL_TEST, { storyId });
-    }
-  }, [emit, getCurrentStoryId]);
+      try {
+        const response = await fetch(`${API_BASE_PATH}/test`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ storyId }),
+        });
+        const testApiResult = await response.json();
 
-  const handleAcceptChanges = useCallback(() => {
-    const storyId = getCurrentStoryId();
-    if (storyId && (result.status === "failed" || result.status === "new")) {
-      setResult({ status: "running", message: "Accepting new baseline..." });
-      emit(EVENTS.REQUEST_ACCEPT_NEW_BASELINE, {
-        storyId,
-        newImage: result.newImage,
-      });
+        if (!response.ok) {
+          throw new Error(
+            testApiResult.message || `Server error: ${response.status}`,
+          );
+        }
+        setResult({ ...testApiResult, storyId });
+      } catch (error: any) {
+        console.error(
+          `[${ADDON_ID}] Error during visual test for story ${storyId}:`,
+          error,
+        );
+        setResult({
+          status: "error",
+          message:
+            error.message ||
+            "Failed to run visual test. Check console and server logs.",
+          baselineExists: result.baselineExists,
+        });
+      }
     }
-  }, [emit, getCurrentStoryId, result.status, result.newImage]);
+  }, [api, result.baselineExists, getCurrentStoryId]);
+
+  const handleAcceptChanges = useCallback(async () => {
+    const storyId = getCurrentStoryId();
+    if (
+      storyId &&
+      (result.status === "failed" || result.status === "new") &&
+      result.newImage
+    ) {
+      setResult((prevResult) => ({
+        ...prevResult,
+        status: "running",
+        message: "Accepting new baseline...",
+      }));
+      try {
+        const response = await fetch(`${API_BASE_PATH}/accept`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ storyId, imageBase64: result.newImage }),
+        });
+        const acceptApiResult = await response.json();
+
+        if (!response.ok) {
+          throw new Error(
+            acceptApiResult.message || `Server error: ${response.status}`,
+          );
+        }
+        setResult({
+          status: "success",
+          message: acceptApiResult.message || "Baseline accepted.",
+          baselineExists: true,
+          diffImage: undefined,
+          newImage: result.newImage,
+        });
+      } catch (error: any) {
+        console.error(
+          `[${ADDON_ID}] Error accepting new baseline for story ${storyId}:`,
+          error,
+        );
+        setResult((prevResult) => ({
+          ...prevResult,
+          status: "error",
+          message:
+            error.message ||
+            "Failed to accept new baseline. Check console and server logs.",
+        }));
+      }
+    }
+  }, [result, getCurrentStoryId]);
 
   const getStatusMessage = () => {
     if (result.status === "idle") return "Ready to test.";
