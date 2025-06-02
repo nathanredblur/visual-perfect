@@ -145,7 +145,16 @@ const ImageTypeLabel = styled.div`
 `;
 
 interface VisualTestResult {
-  status: "idle" | "running" | "success" | "failed" | "error" | "new";
+  status:
+    | "idle"
+    | "running"
+    | "success"
+    | "failed"
+    | "error"
+    | "new"
+    | "baseline_exists"
+    | "no_baseline"
+    | "loading_baseline";
   message?: string;
   diffImage?: string;
   newImage?: string;
@@ -162,7 +171,7 @@ interface PanelContentProps {
 
 const initialPanelState: VisualTestResult = {
   status: "idle",
-  message: "Ready to test. Click 'Run Test' to start.",
+  message: "Panel initializing...",
   diffImage: undefined,
   newImage: undefined,
   baselineImage: undefined,
@@ -184,16 +193,70 @@ export const PanelContent: React.FC<PanelContentProps> = ({ active }) => {
   useEffect(() => {
     if (active && currentStoryId) {
       console.log(
-        `[${ADDON_ID}] Story changed to: ${currentStoryId} or panel became active. Resetting panel state.`,
+        `[${ADDON_ID}] Story changed to: ${currentStoryId} or panel became active. Loading baseline info...`,
       );
-      setResult(initialPanelState);
+      setResult({
+        status: "loading_baseline",
+        message: "Loading baseline information...",
+      });
       setDisplayImage(null);
       setAcceptActionState("idle");
+
+      const fetchBaseline = async () => {
+        try {
+          const response = await fetch(
+            `${API_BASE_PATH}/baseline/${currentStoryId}`,
+          );
+          const baselineApiResult: VisualTestResult = await response.json();
+          if (!response.ok) {
+            throw new Error(
+              baselineApiResult.message || `Server error: ${response.status}`,
+            );
+          }
+
+          if (baselineApiResult.status === "baseline_exists") {
+            setResult({
+              status: "idle",
+              message:
+                baselineApiResult.message || "Baseline loaded. Ready to test.",
+              baselineImage: baselineApiResult.baselineImage,
+              baselineExists: true,
+            });
+            setDisplayImage("baseline");
+          } else if (baselineApiResult.status === "no_baseline") {
+            setResult({
+              status: "idle",
+              message:
+                baselineApiResult.message ||
+                "No baseline. Run test to create one.",
+              baselineExists: false,
+            });
+            setDisplayImage(null);
+          } else {
+            throw new Error(
+              `Unexpected status from baseline check: ${baselineApiResult.status}`,
+            );
+          }
+        } catch (error: any) {
+          console.error(
+            `[${ADDON_ID}] Error loading baseline for story ${currentStoryId}:`,
+            error,
+          );
+          setResult({
+            status: "error",
+            message: error.message || "Failed to load baseline information.",
+          });
+          setDisplayImage(null);
+        }
+      };
+      fetchBaseline();
     } else if (!active) {
     }
   }, [active, currentStoryId]);
 
   useEffect(() => {
+    if (result.status === "loading_baseline") return;
+
     if (result.status === "failed" && result.diffImage) {
       setDisplayImage("diff");
     } else if (
@@ -203,26 +266,28 @@ export const PanelContent: React.FC<PanelContentProps> = ({ active }) => {
       result.newImage
     ) {
       setDisplayImage("new");
-    } else if (result.status === "idle" || result.status === "error") {
-      setDisplayImage(null);
+    } else if (result.status === "baseline_exists" && result.baselineImage) {
+      setDisplayImage("baseline");
+    } else if (
+      result.status === "idle" ||
+      result.status === "error" ||
+      result.status === "no_baseline"
+    ) {
+      if (result.status === "idle" && result.baselineImage) {
+        setDisplayImage("baseline");
+      } else {
+        setDisplayImage(null);
+      }
     }
   }, [result]);
 
   const handleRunTest = useCallback(async () => {
-    if (!currentStoryId) {
-      console.warn(`[${ADDON_ID}] No currentStoryId available to run test.`);
-      setResult({
-        status: "error",
-        message: "No story selected or available.",
-      });
-      return;
-    }
-
+    if (!currentStoryId) return;
     setAcceptActionState("idle");
     setDisplayImage(null);
     setResult({
       status: "running",
-      message: "Capturing and comparing with Playwright...",
+      message: "Capturing and comparing...",
       baselineExists: result.baselineExists,
     });
     try {
@@ -231,93 +296,86 @@ export const PanelContent: React.FC<PanelContentProps> = ({ active }) => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ storyId: currentStoryId }),
       });
-      const testApiResult = await response.json();
-
-      if (!response.ok) {
+      const testApiResult: VisualTestResult = await response.json();
+      if (!response.ok)
         throw new Error(
           testApiResult.message || `Server error: ${response.status}`,
         );
-      }
       setResult(testApiResult);
     } catch (error: any) {
-      console.error(
-        `[${ADDON_ID}] Error during visual test for story ${currentStoryId}:`,
-        error,
-      );
       setResult({
         status: "error",
-        message:
-          error.message ||
-          "Failed to run visual test. Check console and server logs.",
+        message: error.message || "Failed to run test.",
         baselineExists: result.baselineExists,
       });
     }
   }, [currentStoryId, result.baselineExists]);
 
   const handleAcceptChanges = useCallback(async () => {
-    if (!currentStoryId) {
-      console.warn(
-        `[${ADDON_ID}] No currentStoryId available to accept changes.`,
-      );
-      return;
-    }
     if (
-      (result.status === "failed" || result.status === "new") &&
-      result.newImage
-    ) {
-      setResult((prevResult) => ({
-        ...prevResult,
-        status: "running",
-        message: "Accepting new baseline...",
-      }));
-      try {
-        const response = await fetch(`${API_BASE_PATH}/accept`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            storyId: currentStoryId,
-            imageBase64: result.newImage,
-          }),
-        });
-        const acceptApiResult = await response.json();
-
-        if (!response.ok) {
-          throw new Error(
-            acceptApiResult.message || `Server error: ${response.status}`,
-          );
-        }
-        setResult({
-          status: "success",
-          message: acceptApiResult.message || "Baseline accepted.",
-          baselineExists: true,
-          diffImage: undefined,
-          newImage: result.newImage,
-          baselineImage: result.newImage,
-        });
-        setAcceptActionState("accepted");
-        setDisplayImage("new");
-      } catch (error: any) {
-        console.error(
-          `[${ADDON_ID}] Error accepting new baseline for story ${currentStoryId}:`,
-          error,
+      !currentStoryId ||
+      !result.newImage ||
+      !(result.status === "failed" || result.status === "new")
+    )
+      return;
+    setResult((prev) => ({
+      ...prev,
+      status: "running",
+      message: "Accepting baseline...",
+    }));
+    try {
+      const response = await fetch(`${API_BASE_PATH}/accept`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          storyId: currentStoryId,
+          imageBase64: result.newImage,
+        }),
+      });
+      const acceptApiResult = await response.json();
+      if (!response.ok)
+        throw new Error(
+          acceptApiResult.message || `Server error: ${response.status}`,
         );
-        setResult((prevResult) => ({
-          ...prevResult,
-          status: "error",
-          message:
-            error.message ||
-            "Failed to accept new baseline. Check console and server logs.",
-        }));
-      }
+      setResult({
+        status: "success",
+        message: acceptApiResult.message || "Baseline accepted.",
+        baselineExists: true,
+        newImage: result.newImage,
+        baselineImage: result.newImage,
+        diffImage: undefined,
+      });
+      setAcceptActionState("accepted");
+      setDisplayImage("new");
+    } catch (error: any) {
+      setResult((prev) => ({
+        ...prev,
+        status: "error",
+        message: error.message || "Failed to accept baseline.",
+      }));
     }
-  }, [currentStoryId, result.status, result.newImage]);
+  }, [currentStoryId, result.newImage, result.status]);
 
   const getStatusIcon = () => {
-    if (result.status === "success") return <CheckIcon />;
+    if (result.status === "success" && acceptActionState !== "accepted")
+      return <CheckIcon />;
     if (result.status === "failed") return <AlertIcon />;
     if (result.status === "error") return <AlertIcon />;
-    if (result.status === "new") return <AlertIcon />;
+    if (
+      result.status === "new" ||
+      result.status === "no_baseline" ||
+      result.status === "baseline_exists"
+    )
+      return <AlertIcon />;
     return null;
+  };
+
+  const handleSwitchImage = () => {
+    if (displayImage === "new") {
+      setDisplayImage("baseline");
+    } else {
+      setDisplayImage("new");
+    }
   };
 
   const currentImageToDisplay = (): string | null => {
@@ -325,31 +383,21 @@ export const PanelContent: React.FC<PanelContentProps> = ({ active }) => {
     if (displayImage === "baseline" && result.baselineImage)
       return result.baselineImage;
     if (displayImage === "new" && result.newImage) return result.newImage;
+    if (
+      result.baselineImage &&
+      (result.status === "idle" || result.status === "baseline_exists")
+    )
+      return result.baselineImage;
     if (result.newImage) return result.newImage;
-    if (result.baselineImage) return result.baselineImage;
-    if (result.diffImage) return result.diffImage;
     return null;
   };
   const imageSrc = currentImageToDisplay();
   const imageLabel = displayImage ? displayImage.toUpperCase() : null;
 
-  // --- New onClick handler for Switch button ---
-  const handleSwitchImage = () => {
-    if (displayImage === "new") {
-      setDisplayImage("baseline");
-    } else {
-      // If current is baseline, diff, or null, switch to new
-      setDisplayImage("new");
-    }
-  };
+  if (!active) return null;
+  const isRunning =
+    result.status === "running" || result.status === "loading_baseline";
 
-  if (!active) {
-    return null;
-  }
-
-  const isRunning = result.status === "running";
-
-  // Custom styles for buttons to achieve blue/green look if variants are limited
   const acceptButtonStyle: React.CSSProperties =
     acceptActionState === "accepted"
       ? { backgroundColor: "#4CAF50", color: "white", cursor: "default" }
@@ -365,6 +413,29 @@ export const PanelContent: React.FC<PanelContentProps> = ({ active }) => {
     cursor: "default",
   };
 
+  // Determine which primary action button to show (Run Test or Redo)
+  let showRunTestButton = false;
+  let showRedoIconButton = false;
+
+  if (
+    acceptActionState !== "accepted" &&
+    !(result.status === "new" || result.status === "failed")
+  ) {
+    if (
+      result.status === "idle" ||
+      result.status === "no_baseline" ||
+      result.status === "baseline_exists"
+    ) {
+      showRunTestButton = true;
+    } else if (
+      result.status === "error" ||
+      result.status ===
+        "success" /* && acceptActionState !== "accepted" is implied by outer if */
+    ) {
+      showRedoIconButton = true;
+    }
+  }
+
   return (
     <PanelWrapper>
       <ControlsRow>
@@ -373,7 +444,7 @@ export const PanelContent: React.FC<PanelContentProps> = ({ active }) => {
           <span>{result.message || " "}</span>
         </StatusText>
 
-        {result.status === "idle" && (
+        {showRunTestButton && (
           <Button
             variant="outline"
             onClick={handleRunTest}
@@ -383,7 +454,17 @@ export const PanelContent: React.FC<PanelContentProps> = ({ active }) => {
             Run Test
           </Button>
         )}
+        {showRedoIconButton && (
+          <IconButton
+            onClick={handleRunTest}
+            disabled={isRunning}
+            title="Redo Test"
+          >
+            <RefreshIcon />
+          </IconButton>
+        )}
 
+        {/* Accept Changes Button Group (Accept + Redo icon) */}
         {(result.status === "new" || result.status === "failed") &&
           acceptActionState !== "accepted" && (
             <>
@@ -405,19 +486,13 @@ export const PanelContent: React.FC<PanelContentProps> = ({ active }) => {
             </>
           )}
 
-        {(result.status === "success" || acceptActionState === "accepted") && (
+        {/* Accepted State / Post-Success State */}
+        {result.status === "success" && acceptActionState === "accepted" && (
           <>
-            {acceptActionState === "accepted" ? (
-              <Button disabled style={acceptedButtonStyle}>
-                <CheckIcon style={{ marginRight: "6px" }} />
-                Accepted
-              </Button>
-            ) : (
-              <Button variant="outline" disabled style={noChangesButtonStyle}>
-                <CheckIcon style={{ marginRight: "6px" }} />
-                No changes
-              </Button>
-            )}
+            <Button disabled style={acceptedButtonStyle}>
+              <CheckIcon style={{ marginRight: "6px" }} />
+              Accepted
+            </Button>
             <Separator />
             <IconButton
               onClick={handleRunTest}
@@ -428,17 +503,8 @@ export const PanelContent: React.FC<PanelContentProps> = ({ active }) => {
             </IconButton>
           </>
         )}
-
-        {result.status === "error" && (
-          <IconButton
-            onClick={handleRunTest}
-            disabled={isRunning}
-            title="Redo Test"
-          >
-            <RefreshIcon />
-          </IconButton>
-        )}
       </ControlsRow>
+
       <ImageDisplayWrapper>
         {isRunning && (
           <MessagePlaceholder>
@@ -447,7 +513,8 @@ export const PanelContent: React.FC<PanelContentProps> = ({ active }) => {
         )}
         {!isRunning && !imageSrc && (
           <MessagePlaceholder>
-            {result.message || "No image to display."}
+            {result.message ||
+              "No image to display. Run a test or check baseline status."}
           </MessagePlaceholder>
         )}
         {!isRunning && imageSrc && (
@@ -461,8 +528,11 @@ export const PanelContent: React.FC<PanelContentProps> = ({ active }) => {
       </ImageDisplayWrapper>
 
       {!isRunning &&
-        (result.status === "failed" || result.status === "success") &&
-        (result.newImage || result.baselineImage) && (
+        (result.status === "failed" ||
+          result.status === "success" ||
+          result.status === "baseline_exists") &&
+        result.newImage &&
+        result.baselineImage && (
           <BottomControlsRow>
             <Button
               variant="outline"
@@ -481,6 +551,7 @@ export const PanelContent: React.FC<PanelContentProps> = ({ active }) => {
                   : "New"}
               )
             </Button>
+
             {result.diffImage && (
               <IconButton
                 onClick={() => setDisplayImage("diff")}

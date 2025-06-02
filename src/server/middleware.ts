@@ -76,6 +76,62 @@ async function takePlaywrightScreenshot(
   }
 }
 
+// --- NEW ENDPOINT to get existing baseline ---
+router.get("/baseline/:storyId", async (req, res) => {
+  const { storyId } = req.params;
+  console.log(`[${ADDON_ID}] Received /baseline request for story: ${storyId}`);
+
+  if (!storyId) {
+    res.writeHead(400, { "Content-Type": "application/json" });
+    return res.end(
+      JSON.stringify({
+        status: "error",
+        message: "storyId parameter is required",
+      }),
+    );
+  }
+
+  try {
+    const baselinePath = path.join(BASELINES_DIR, `${storyId}.png`);
+    if (await fs.pathExists(baselinePath)) {
+      const baselineImageBuffer = await fs.readFile(baselinePath);
+      const baselineImageBase64 = baselineImageBuffer.toString("base64");
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(
+        JSON.stringify({
+          status: "baseline_exists",
+          message: "Baseline image loaded.",
+          baselineImage: `data:image/png;base64,${baselineImageBase64}`,
+          baselineExists: true,
+        }),
+      );
+    } else {
+      res.writeHead(200, { "Content-Type": "application/json" }); // 200 OK, but no baseline
+      return res.end(
+        JSON.stringify({
+          status: "no_baseline",
+          message: "No baseline image found for this story.",
+          baselineExists: false,
+        }),
+      );
+    }
+  } catch (error: any) {
+    console.error(
+      `[${ADDON_ID}] Error in /baseline endpoint for ${storyId}:`,
+      error,
+    );
+    if (!res.headersSent) {
+      res.writeHead(500, { "Content-Type": "application/json" });
+    }
+    return res.end(
+      JSON.stringify({
+        status: "error",
+        message: error.message || "Server error fetching baseline.",
+      }),
+    );
+  }
+});
+
 // Endpoint to run the visual test
 router.post("/test", async (req, res) => {
   const { storyId, imageBase64: clientImageBase64 } = req.body;
