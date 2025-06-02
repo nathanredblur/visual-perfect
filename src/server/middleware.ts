@@ -104,6 +104,7 @@ router.post("/test", async (req, res) => {
     if (await fs.pathExists(baselinePath)) {
       console.log(`[${ADDON_ID}] Baseline found for ${storyId}. Comparing...`);
       const baselineImageBuffer = await fs.readFile(baselinePath);
+      const baselineImageBase64 = baselineImageBuffer.toString("base64"); // For sending to panel
 
       const baselinePng = PNG.sync.read(baselineImageBuffer);
       const currentPng = PNG.sync.read(currentImageBuffer);
@@ -113,6 +114,8 @@ router.post("/test", async (req, res) => {
         console.warn(
           `[${ADDON_ID}] Image dimensions mismatch for ${storyId}. Baseline: ${width}x${height}, Current: ${currentPng.width}x${currentPng.height}. Saving new image.`,
         );
+        // Even with dimension mismatch, we save the new image as baseline as per current logic.
+        // We send the old baseline for comparison and the new image.
         await fs.writeFile(baselinePath, currentImageBuffer);
         res.writeHead(200, { "Content-Type": "application/json" });
         return res.end(
@@ -120,7 +123,8 @@ router.post("/test", async (req, res) => {
             status: "failed",
             message:
               "Image dimensions differ. New image saved as baseline. Please review and accept or re-run.",
-            newImage: newImageBase64, // Send the new image to display it
+            newImage: `data:image/png;base64,${newImageBase64}`,
+            baselineImage: `data:image/png;base64,${baselineImageBase64}`, // Send previous baseline
             baselineExists: true,
             // No diffImage because dimensions are different
           }),
@@ -150,7 +154,8 @@ router.post("/test", async (req, res) => {
             status: "failed",
             message: `Found ${mismatchedPixels} mismatched pixels.`,
             diffImage: `data:image/png;base64,${diffImageBase64}`,
-            newImage: `data:image/png;base64,${newImageBase64}`, // The current image that caused the failure
+            newImage: `data:image/png;base64,${newImageBase64}`,
+            baselineImage: `data:image/png;base64,${baselineImageBase64}`, // Send existing baseline
             baselineExists: true,
           }),
         );
@@ -161,6 +166,8 @@ router.post("/test", async (req, res) => {
           JSON.stringify({
             status: "success",
             message: "No visual changes detected.",
+            baselineImage: `data:image/png;base64,${baselineImageBase64}`, // Also send baseline on success for consistency
+            newImage: `data:image/png;base64,${newImageBase64}`, // And current image (which is same as baseline)
             baselineExists: true,
           }),
         );
