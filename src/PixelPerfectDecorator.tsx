@@ -299,17 +299,7 @@ export const PixelPerfectDecorator: (
               data-layer-name={layer.name} // name is now always present
               onMouseDown={(e) => handleMouseDown(e, layer)}
             >
-              <img
-                src={layer.src}
-                alt={layer.name}
-                style={{
-                  display: "block",
-                  height: "auto",
-                  opacity: "inherit", // Inherit opacity from parent div which has the primary opacity control
-                  filter: "inherit", // Inherit filter
-                  pointerEvents: "none", // Important: make sure img itself doesn't capture mouse events meant for the div
-                }}
-              />
+              <img src={layer.src} alt={layer.name} />
             </div>
           );
         })}
