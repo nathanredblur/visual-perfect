@@ -91,21 +91,26 @@ export const LayerListDisplay: React.FC<LayerListDisplayProps> = ({
 
   return (
     <LayerList>
-      {rawLayersConfig.map((layer) => (
-        <LayerRow
-          key={layer.id}
-          isSelected={layer.id === selectedLayerId}
-          onClick={() => onSelectLayer(layer.id)}
-        >
-          <LayerName title={layer.src}>{layer.name}</LayerName>
-          <DeleteLayerButton
-            title="Delete Layer"
-            onClick={(e) => onDeleteLayer(layer.id, e)}
+      {rawLayersConfig.map((layer) => {
+        const canDelete = layer.id.startsWith("pp-layer-uploaded-");
+        return (
+          <LayerRow
+            key={layer.id}
+            isSelected={layer.id === selectedLayerId}
+            onClick={() => onSelectLayer(layer.id)}
           >
-            <CloseIcon />
-          </DeleteLayerButton>
-        </LayerRow>
-      ))}
+            <LayerName title={layer.src}>{layer.name}</LayerName>
+            {canDelete && (
+              <DeleteLayerButton
+                title="Delete Layer"
+                onClick={(e) => onDeleteLayer(layer.id, e)}
+              >
+                <CloseIcon />
+              </DeleteLayerButton>
+            )}
+          </LayerRow>
+        );
+      })}
     </LayerList>
   );
 };
