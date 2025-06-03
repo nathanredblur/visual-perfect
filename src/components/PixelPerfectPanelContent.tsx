@@ -61,6 +61,12 @@ export interface PixelPerfectLayerState {
   // 'source' can be re-introduced if needed to distinguish story-defined vs. uploaded for deletion rules
 }
 
+// Interface for payload from preview when layer is dragged
+interface LayerPositionUpdatePayload {
+  id: string;
+  position: { x: number; y: number };
+}
+
 // --- Styled Components (similar to PanelContent for consistency) ---
 const PanelWrapper = styled.div`
   padding: 10px;
@@ -229,7 +235,7 @@ export const PixelPerfectPanelContent: React.FC<
 
   useEffect(() => {
     if (active && currentStoryId) {
-      const newRawLayers: PixelPerfectLayerState[] = [];
+      const newRawLayersFromParams: PixelPerfectLayerState[] = [];
       const defaultOpacity = storyParams?.opacity ?? 0.5;
       const defaultPosition = storyParams?.position ?? { x: 0, y: 0 };
       const defaultZoom = storyParams?.zoom ?? 1;
@@ -259,58 +265,141 @@ export const PixelPerfectPanelContent: React.FC<
             const fileName = pathnameParts[pathnameParts.length - 1];
             if (fileName) name = decodeURIComponent(fileName);
           } catch (e) {
-            /* Not a valid URL, or relative path, keep default name */
+            /* Keep default */
           }
 
+          // Ensure layer IDs from story params are distinct from uploaded ones
           const layerId = `pp-layer-story-${currentStoryId}-${index}`;
 
-          newRawLayers.push({
+          newRawLayersFromParams.push({
             id: layerId,
             name,
             src: baseSrc,
             opacity: layerSpecificOpacity ?? defaultOpacity,
             position: layerSpecificPosition ?? defaultPosition,
             zoom: layerSpecificZoom ?? defaultZoom,
-            visible: false,
+            visible: false, // Initial visibility is false, controlled by selection/global toggle
             locked: false,
             invertColors: layerSpecificInvertColors ?? false,
           });
         });
       }
-      // Only update rawLayersConfig if it has actually changed to prevent loops for uploaded images
-      const storyLayerIds = new Set(newRawLayers.map((l) => l.id));
-      const existingStoryLayers = rawLayersConfig.filter((l) =>
-        storyLayerIds.has(l.id),
-      );
-      const uploadedLayers = rawLayersConfig.filter(
-        (l) =>
-          !storyLayerIds.has(l.id) && l.id.startsWith("pp-layer-uploaded-"),
-      );
 
-      if (
-        JSON.stringify(existingStoryLayers) !== JSON.stringify(newRawLayers)
-      ) {
-        setRawLayersConfig([...newRawLayers, ...uploadedLayers]);
-      }
+      // This updater function now correctly merges new params with existing state
+      setRawLayersConfig((prevRawLayers) => {
+        const nextLayers: PixelPerfectLayerState[] = [];
+        const paramLayerIds = new Set(newRawLayersFromParams.map((l) => l.id));
+        let newSelectedLayerId: string | null = null;
 
-      const currentSelectionStillValid = [
-        ...newRawLayers,
-        ...uploadedLayers,
-      ].some((l) => l.id === selectedLayerId);
-      const allPossibleLayers = [...newRawLayers, ...uploadedLayers];
-      if (!currentSelectionStillValid && allPossibleLayers.length > 0) {
-        setSelectedLayerId(allPossibleLayers[0]?.id || null);
-      } else if (allPossibleLayers.length === 0) {
-        setSelectedLayerId(null);
-      }
+        // Process layers from parameters
+        newRawLayersFromParams.forEach((paramLayer) => {
+          const existingLayer = prevRawLayers.find(
+            (l) => l.id === paramLayer.id,
+          );
+          if (existingLayer && existingLayer.src === paramLayer.src) {
+            // If layer from params matches an existing one by ID and SRC,
+            // keep its user-modified state (opacity, position, zoom, locked, invertColors, visible)
+            // but update its name from params (in case it changed) and ensure param-defined specifics are used if they were the source.
+            // This is subtle. The paramLayer already has the *correct* opacity/pos/zoom based on story param specifics or defaults.
+            // We want to preserve user interactions if they occurred AFTER this layer was first created with those param settings.
+            // The `existingLayer` here *is* the one that would have been dragged/modified.
+            nextLayers.push({
+              ...paramLayer, // Start with param definition (name, src, param-specific opacity/pos/zoom or defaults)
+              // Then overlay with user-modified state if it was not just a default application.
+              // Crucially, if the user dragged it, existingLayer.position is the truth.
+              opacity: existingLayer.opacity,
+              position: existingLayer.position,
+              zoom: existingLayer.zoom,
+              locked: existingLayer.locked,
+              invertColors: existingLayer.invertColors,
+              visible: existingLayer.visible, // Preserve visibility state too
+            });
+          } else {
+            // It's a new layer from params (or src changed, treat as new)
+            nextLayers.push(paramLayer);
+          }
+        });
+
+        // Add uploaded layers from previous state that are not in current story params
+        prevRawLayers.forEach((prevLayer) => {
+          if (
+            prevLayer.id.startsWith("pp-layer-uploaded-") &&
+            !paramLayerIds.has(prevLayer.id)
+          ) {
+            nextLayers.push(prevLayer);
+          }
+        });
+
+        // Determine selection based on the new `nextLayers`
+        // Read current selectedLayerId from state directly inside this updater via a ref or pass as arg if needed,
+        // for now, we use the selectedLayerId from the outer scope (which might be slightly stale if this runs due to its own change)
+        // Better: use the `prevRawLayers` to find previous selection if needed.
+        const currentSelectedLayer = prevRawLayers.find(
+          (l) => l.id === selectedLayerId,
+        );
+        let selectionStillValid = false;
+        if (currentSelectedLayer) {
+          selectionStillValid = nextLayers.some(
+            (l) => l.id === currentSelectedLayer.id,
+          );
+        }
+
+        if (selectionStillValid) {
+          newSelectedLayerId = selectedLayerId;
+        } else if (nextLayers.length > 0) {
+          newSelectedLayerId = nextLayers[0]?.id || null;
+        } else {
+          newSelectedLayerId = null;
+        }
+
+        // Only update selectedLayerId if it actually changes to prevent loops with its own effect
+        if (newSelectedLayerId !== selectedLayerId) {
+          setSelectedLayerId(newSelectedLayerId);
+        }
+
+        return nextLayers;
+      });
     } else if (!active) {
-      // When panel becomes inactive, clear all layers including uploaded ones
       setRawLayersConfig([]);
       setSelectedLayerId(null);
     }
-    // Adjusted dependency array: rawLayersConfig can cause loops if directly included when merging story and uploaded layers.
-    // The logic inside now tries to be more specific about when to call setRawLayersConfig.
-  }, [active, currentStoryId, storyParams, selectedLayerId]); // Added selectedLayerId to potentially help re-evaluate selection
+    // Dependencies: Only re-run if the story context or parameters change.
+    // selectedLayerId (value) is read, setSelectedLayerId (setter) is called.
+  }, [
+    active,
+    currentStoryId,
+    storyParams,
+    selectedLayerId,
+    setSelectedLayerId,
+  ]);
+
+  useEffect(() => {
+    const handleLayerPositionUpdate = (payload: LayerPositionUpdatePayload) => {
+      console.log(
+        `[${ADDON_ID}-Panel] Received layer position update:`,
+        payload,
+      );
+      setRawLayersConfig((prevLayers) =>
+        prevLayers.map((layer) =>
+          layer.id === payload.id
+            ? { ...layer, position: payload.position }
+            : layer,
+        ),
+      );
+    };
+
+    const channel = api.getChannel();
+    if (channel) {
+      channel.on(EVENTS.UPDATE_LAYER_POSITION, handleLayerPositionUpdate);
+
+      return () => {
+        channel.off(EVENTS.UPDATE_LAYER_POSITION, handleLayerPositionUpdate);
+      };
+    }
+    // If channel is not available, this effect does nothing and returns no cleanup.
+    // It might be an indication that the API is not ready, though typically it should be.
+    return undefined; // Explicitly return undefined if channel is not set up
+  }, [api]);
 
   const processedLayers = useMemo(() => {
     return rawLayersConfig.map((layer) => ({
@@ -471,9 +560,9 @@ export const PixelPerfectPanelContent: React.FC<
                 id: newLayerId,
                 name: file.name,
                 src: newLayerSrc,
-                opacity: 1,
-                position: { x: 0, y: 0 },
-                zoom: 1,
+                opacity: storyParams?.opacity ?? 0.5,
+                position: storyParams?.position ?? { x: 0, y: 0 },
+                zoom: storyParams?.zoom ?? 1,
                 visible: false,
                 locked: false,
                 invertColors: false,
@@ -503,7 +592,7 @@ export const PixelPerfectPanelContent: React.FC<
         console.log("No file selected or currentTarget.files is null.");
       }
     },
-    [areAllLayersVisible],
+    [areAllLayersVisible, storyParams],
   );
 
   if (!active) {

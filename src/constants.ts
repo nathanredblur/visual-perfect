@@ -10,4 +10,5 @@ export const DEFAULT_IMAGES_DIR = ".visual-perfect-baselines";
 // Events - although direct fetch is used more now for the visual regression panel
 export const EVENTS = {
   UPDATE_PIXEL_PERFECT_LAYERS: `${ADDON_ID}/updatePixelPerfectLayers`,
-};
+  UPDATE_LAYER_POSITION: `${ADDON_ID}/updateLayerPosition`, // New event for drag and drop
+} as const;
