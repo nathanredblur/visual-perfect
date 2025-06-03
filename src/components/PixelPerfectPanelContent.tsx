@@ -13,27 +13,22 @@ import {
 import { styled } from "storybook/theming";
 import type { Theme } from "storybook/theming";
 import {
-  Placeholder,
   ScrollArea,
   IconButton,
   Form,
   Button,
 } from "storybook/internal/components";
 import {
-  EyeIcon,
-  EyeCloseIcon,
-  LockIcon,
-  UnlockIcon,
-  ContrastIcon,
   ChevronUpIcon,
   ChevronDownIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   RefreshIcon,
-  UploadIcon,
-  CloseIcon,
 } from "@storybook/icons";
 import { PIXEL_PERFECT_PARAM_KEY, ADDON_ID, EVENTS } from "../constants";
+import { PixelPerfectHeader } from "./pixelPerfectControls/PixelPerfectHeader";
+import { LayerListDisplay } from "./pixelPerfectControls/LayerListDisplay";
+import { SelectedLayerDetailControls } from "./pixelPerfectControls/SelectedLayerDetailControls";
 
 // --- Configuration Interfaces (from story parameters) ---
 interface PixelPerfectLayerConfigObject {
@@ -53,7 +48,7 @@ interface PixelPerfectParams {
 }
 
 // --- State Interface (for panel internal state & communication with preview) ---
-interface PixelPerfectLayerState {
+export interface PixelPerfectLayerState {
   id: string; // Generated unique ID for UI management
   name: string; // Generated name (e.g., from src or index)
   src: string;
@@ -78,124 +73,14 @@ const PanelWrapper = styled.div`
   flex-direction: column;
 `;
 
-const ControlsHeader = styled.div`
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
-  flex-shrink: 0;
-  border-bottom: 1px solid ${({ theme }) => theme.appBorderColor || "#ddd"};
-  padding-bottom: 10px;
-`;
-
-const IconGroup = styled.div`
-  display: inline-flex;
-  align-items: center;
-  border-radius: ${({ theme }) => theme.appBorderRadius || 4}px;
-  overflow: hidden;
-  border: 1px solid ${({ theme }) => theme.appBorderColor || "#ddd"};
-`;
-
-const StyledIconButtonInGroup = styled(IconButton)<{ isActive?: boolean }>`
-  border-radius: 0;
-  padding: 6px;
-  border-left: 1px solid ${({ theme }) => theme.appBorderColor || "#ddd"};
-  margin-left: -1px;
-
-  &:first-of-type {
-    border-left: none;
-    margin-left: 0;
-  }
-
-  ${({ isActive, theme }) =>
-    isActive &&
-    `
-    background-color: ${theme.color.secondary};
-    color: ${theme.color.lightest};
-    svg {
-      fill: ${theme.color.lightest};
-    }
-  `}
-
-  ${({ isActive, theme }) =>
-    !isActive &&
-    `
-    background-color: ${theme.background.content};
-    &:hover {
-      background-color: ${theme.background.hoverable};
-    }
-  `}
-`;
-
-const UploadButtonStyled = styled(Button)`
-  padding-top: 6px; // Align text better with icon
-  padding-bottom: 6px;
-  line-height: 1; // Ensure text and icon align well
-  svg {
-    margin-right: 6px;
-  }
-`;
-
-const LayerList = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 10px;
-`;
-
-// Simplified background color logic for LayerRow to avoid lighten/darken issues
-const getLayerRowBackgroundColor = (
-  isSelected: boolean,
-  theme: Theme | undefined,
-  type: "normal" | "hover",
-) => {
-  const isDark = theme?.base === "dark";
-  if (isSelected) {
-    if (type === "hover") return isDark ? "#4A5568" : "#EBF4FF"; // Darker selected hover / Lighter selected hover
-    return isDark ? "#2D3748" : "#C3DAFE"; // Dark selected / Light selected
-  }
-  if (type === "hover") return isDark ? "#2A303C" : "#F7FAFC"; // Dark hover / Light hover
-  return isDark ? "#1A202C" : "#FFFFFF"; // Dark normal / Light normal
-};
-
-const LayerRow = styled.div<{ isSelected: boolean }>`
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px;
-  border: 1px solid ${({ theme }) => theme?.appBorderColor || "#ddd"};
-  border-radius: 4px;
-  background-color: ${({ isSelected, theme }) =>
-    getLayerRowBackgroundColor(isSelected, theme, "normal")};
-  cursor: pointer;
-  &:hover {
-    background-color: ${({ isSelected, theme }) =>
-      getLayerRowBackgroundColor(isSelected, theme, "hover")};
-  }
-`;
-
-const LayerName = styled.span`
-  flex-grow: 1;
-  font-size: 13px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-`;
-
-const DeleteLayerButton = styled(IconButton)`
-  padding: 4px; // Smaller padding for a compact icon button
-  margin-left: auto; // Push to the right
-`;
-
 const ContentArea = styled(ScrollArea)`
   flex-grow: 1;
   margin-top: 10px;
-  padding: 0 5px 0 0; // Adjust padding for scrollbar
-  background-color: transparent; // Make it transparent to inherit PanelWrapper's theme-aware bg
+  padding: 0 5px 0 0;
+  background-color: transparent;
   border-radius: 4px;
 `;
 
-// New styled components for controls
 const SelectedLayerControlsWrapper = styled.div`
   padding: 10px;
   border: 1px solid ${({ theme }) => theme.appBorderColor || "#ccc"};
@@ -205,7 +90,7 @@ const SelectedLayerControlsWrapper = styled.div`
 `;
 
 const ControlSection = styled.div`
-  margin-bottom: 15px; // Increased margin between Origin/Opacity sections
+  margin-bottom: 15px;
   padding: 0;
   &:last-child {
     margin-bottom: 0;
@@ -223,7 +108,7 @@ const ControlSectionTitle = styled.h4`
 
 const MainControlTitle = styled(ControlSectionTitle)`
   text-transform: none;
-  font-size: 14px; // Larger for "Selected Layer"
+  font-size: 14px;
   margin-bottom: 12px;
 `;
 
@@ -237,16 +122,14 @@ const FormGroup = styled.div`
     font-size: 12px;
     flex-shrink: 0;
     color: ${({ theme }) => theme.color.defaultText};
-    width: 40px; // Adjusted for labels like "Zoom"
+    width: 40px;
     text-align: right;
     padding-right: 5px;
   }
 
   input[type="number"],
   .sb-input-component {
-    // For Form.Input wrapper
     flex-grow: 1;
-    // Storybook Form.Input might control its own width, or we can set it here if needed
   }
 
   input[type="range"] {
@@ -255,7 +138,7 @@ const FormGroup = styled.div`
 
   .value-display {
     font-size: 12px;
-    width: 45px; // Room for "100%"
+    width: 45px;
     text-align: right;
     flex-shrink: 0;
     color: ${({ theme }) => theme.color.defaultText};
@@ -266,14 +149,13 @@ const PositionInputs = styled.div`
   display: flex;
   flex-direction: column;
   gap: 6px;
-  flex-grow: 1; // Allow it to take space next to arrow pad
+  flex-grow: 1;
 `;
 
-// New styled components for position controls
 const PositionControlsWrapper = styled.div`
   display: flex;
-  align-items: flex-start; // Align arrow pad and inputs to top
-  gap: 15px; // Increased gap between arrow buttons block and input fields block
+  align-items: flex-start;
+  gap: 15px;
   margin-top: 8px;
 `;
 
@@ -282,8 +164,8 @@ const ArrowButtonsGrid = styled.div`
   grid-template-columns: repeat(3, 1fr);
   grid-template-rows: repeat(3, 1fr);
   gap: 4px;
-  width: 100px; // Fixed width
-  height: 100px; // Fixed height
+  width: 100px;
+  height: 100px;
   flex-shrink: 0;
 `;
 
@@ -309,14 +191,6 @@ const ResetButton = styled(Button)`
 `;
 
 PanelWrapper.displayName = "PanelWrapper";
-ControlsHeader.displayName = "ControlsHeader";
-IconGroup.displayName = "IconGroup";
-StyledIconButtonInGroup.displayName = "StyledIconButtonInGroup";
-UploadButtonStyled.displayName = "UploadButtonStyled";
-LayerList.displayName = "LayerList";
-LayerRow.displayName = "LayerRow";
-LayerName.displayName = "LayerName";
-DeleteLayerButton.displayName = "DeleteLayerButton";
 ContentArea.displayName = "ContentArea";
 SelectedLayerControlsWrapper.displayName = "SelectedLayerControlsWrapper";
 ControlSection.displayName = "ControlSection";
@@ -356,11 +230,9 @@ export const PixelPerfectPanelContent: React.FC<
   useEffect(() => {
     if (active && currentStoryId) {
       const newRawLayers: PixelPerfectLayerState[] = [];
-      const defaultOpacity = storyParams?.opacity ?? 1;
+      const defaultOpacity = storyParams?.opacity ?? 0.5;
       const defaultPosition = storyParams?.position ?? { x: 0, y: 0 };
       const defaultZoom = storyParams?.zoom ?? 1;
-
-      let autoSelectedId: string | null = null;
 
       if (storyParams?.layers && Array.isArray(storyParams.layers)) {
         storyParams.layers.forEach((layerConfig, index) => {
@@ -390,8 +262,7 @@ export const PixelPerfectPanelContent: React.FC<
             /* Not a valid URL, or relative path, keep default name */
           }
 
-          const layerId = `pp-layer-${currentStoryId}-${index}`;
-          if (index === 0) autoSelectedId = layerId; // Tentatively select the first
+          const layerId = `pp-layer-story-${currentStoryId}-${index}`;
 
           newRawLayers.push({
             id: layerId,
@@ -406,20 +277,40 @@ export const PixelPerfectPanelContent: React.FC<
           });
         });
       }
-      setRawLayersConfig(newRawLayers);
-
-      // Update selection: if current selectedId is not in newRawLayers, or none is selected, pick first.
-      const currentSelectionStillValid = newRawLayers.some(
-        (l) => l.id === selectedLayerId,
+      // Only update rawLayersConfig if it has actually changed to prevent loops for uploaded images
+      const storyLayerIds = new Set(newRawLayers.map((l) => l.id));
+      const existingStoryLayers = rawLayersConfig.filter((l) =>
+        storyLayerIds.has(l.id),
       );
-      if (!currentSelectionStillValid && newRawLayers.length > 0) {
-        setSelectedLayerId(newRawLayers[0]?.id || null);
+      const uploadedLayers = rawLayersConfig.filter(
+        (l) =>
+          !storyLayerIds.has(l.id) && l.id.startsWith("pp-layer-uploaded-"),
+      );
+
+      if (
+        JSON.stringify(existingStoryLayers) !== JSON.stringify(newRawLayers)
+      ) {
+        setRawLayersConfig([...newRawLayers, ...uploadedLayers]);
+      }
+
+      const currentSelectionStillValid = [
+        ...newRawLayers,
+        ...uploadedLayers,
+      ].some((l) => l.id === selectedLayerId);
+      const allPossibleLayers = [...newRawLayers, ...uploadedLayers];
+      if (!currentSelectionStillValid && allPossibleLayers.length > 0) {
+        setSelectedLayerId(allPossibleLayers[0]?.id || null);
+      } else if (allPossibleLayers.length === 0) {
+        setSelectedLayerId(null);
       }
     } else if (!active) {
+      // When panel becomes inactive, clear all layers including uploaded ones
       setRawLayersConfig([]);
       setSelectedLayerId(null);
     }
-  }, [active, currentStoryId, storyParams]);
+    // Adjusted dependency array: rawLayersConfig can cause loops if directly included when merging story and uploaded layers.
+    // The logic inside now tries to be more specific about when to call setRawLayersConfig.
+  }, [active, currentStoryId, storyParams, selectedLayerId]); // Added selectedLayerId to potentially help re-evaluate selection
 
   const processedLayers = useMemo(() => {
     return rawLayersConfig.map((layer) => ({
@@ -430,10 +321,6 @@ export const PixelPerfectPanelContent: React.FC<
 
   useEffect(() => {
     if (active) {
-      console.log(
-        `[${ADDON_ID}-PixelPerfect] Emitting updated processedLayers (via useChannel):`,
-        processedLayers,
-      );
       emit(EVENTS.UPDATE_PIXEL_PERFECT_LAYERS, { layers: processedLayers });
     }
   }, [processedLayers, active, emit]);
@@ -458,20 +345,17 @@ export const PixelPerfectPanelContent: React.FC<
   const handleLayerDelete = useCallback(
     (layerIdToDelete: string, event: React.SyntheticEvent) => {
       event.stopPropagation();
-      setRawLayersConfig((prev) =>
-        prev.filter((l) => l.id !== layerIdToDelete),
-      );
-      if (selectedLayerId === layerIdToDelete) {
-        const remainingLayers = rawLayersConfig.filter(
-          (l) => l.id !== layerIdToDelete,
-        );
-        setSelectedLayerId(remainingLayers?.[0]?.id || null);
-      }
+      setRawLayersConfig((prev) => {
+        const updatedLayers = prev.filter((l) => l.id !== layerIdToDelete);
+        if (selectedLayerId === layerIdToDelete) {
+          setSelectedLayerId(updatedLayers?.[0]?.id || null);
+        }
+        return updatedLayers;
+      });
     },
-    [rawLayersConfig, selectedLayerId],
+    [selectedLayerId],
   );
 
-  // --- Callbacks for selected layer controls ---
   const handleToggleLock = useCallback(() => {
     if (!selectedLayerId) return;
     setRawLayersConfig((prev) =>
@@ -490,7 +374,6 @@ export const PixelPerfectPanelContent: React.FC<
     );
   }, [selectedLayerId]);
 
-  // --- New handlers for selected layer properties ---
   const handleOpacityChange = useCallback(
     (newOpacity: number) => {
       if (!selectedLayerId) return;
@@ -535,7 +418,6 @@ export const PixelPerfectPanelContent: React.FC<
     [selectedLayerId],
   );
 
-  // New handler for position adjustment buttons
   const handlePositionAdjust = useCallback(
     (axis: "x" | "y", amount: number) => {
       if (!selectedLayerId) return;
@@ -561,8 +443,6 @@ export const PixelPerfectPanelContent: React.FC<
 
   const handleResetOrigin = useCallback(() => {
     if (!selectedLayerId) return;
-    // For now, resets to 0,0 and zoom 1.
-    // A more sophisticated reset would use initial params.
     handlePositionChange("x", 0);
     handlePositionChange("y", 0);
     handleZoomChange(1);
@@ -613,14 +493,14 @@ export const PixelPerfectPanelContent: React.FC<
             console.error("Error reading file:", error);
           };
           reader.readAsDataURL(file);
-          currentTarget.value = ""; // Reset file input value using the captured currentTarget
+          currentTarget.value = "";
         } else {
           console.log(
             "File selected was undefined, although files array was not empty.",
           );
         }
       } else {
-        console.log("No file selected or event.target/files is null.");
+        console.log("No file selected or currentTarget.files is null.");
       }
     },
     [areAllLayersVisible],
@@ -646,225 +526,47 @@ export const PixelPerfectPanelContent: React.FC<
       : "Invert Colors";
   };
 
-  const isSelectedLayerLocked = selectedLayerRawDetails
-    ? selectedLayerRawDetails.locked
-    : false;
-
-  const isSelectedLayerInverted = selectedLayerRawDetails
-    ? selectedLayerRawDetails.invertColors
-    : false;
+  const isSelectedLayerLocked = selectedLayerRawDetails?.locked ?? false;
+  const isSelectedLayerInverted =
+    selectedLayerRawDetails?.invertColors ?? false;
 
   return (
     <PanelWrapper>
-      <input
-        type="file"
-        accept="image/*"
-        style={{ display: "none" }}
-        ref={fileInputRef}
-        onChange={handleFileSelected}
+      <PixelPerfectHeader
+        areAllLayersVisible={areAllLayersVisible}
+        selectedLayerId={selectedLayerId}
+        isSelectedLayerLocked={isSelectedLayerLocked}
+        isSelectedLayerInverted={isSelectedLayerInverted}
+        getLockTitle={getLockTitle}
+        getInvertTitle={getInvertTitle}
+        onToggleVisibility={handleToggleAllLayersVisibility}
+        onToggleLock={handleToggleLock}
+        onToggleInvert={handleToggleInvertColors}
+        onUploadImage={handleUploadImage}
+        fileInputRef={fileInputRef}
+        onFileSelected={handleFileSelected}
+        selectedLayerRawDetails={selectedLayerRawDetails}
       />
-      <ControlsHeader>
-        <IconGroup>
-          <StyledIconButtonInGroup
-            title={
-              areAllLayersVisible ? "Hide Active Layer" : "Show Active Layer"
-            }
-            onClick={handleToggleAllLayersVisibility}
-            isActive={areAllLayersVisible}
-          >
-            {areAllLayersVisible ? <EyeIcon /> : <EyeCloseIcon />}
-          </StyledIconButtonInGroup>
-          <StyledIconButtonInGroup
-            title={getLockTitle()}
-            onClick={handleToggleLock}
-            disabled={!selectedLayerId}
-            isActive={isSelectedLayerLocked}
-          >
-            {(() => {
-              if (isSelectedLayerLocked) return <UnlockIcon />;
-              return <LockIcon />;
-            })()}
-          </StyledIconButtonInGroup>
-          <StyledIconButtonInGroup
-            title={getInvertTitle()}
-            onClick={handleToggleInvertColors}
-            disabled={!selectedLayerId}
-            isActive={isSelectedLayerInverted}
-          >
-            {(() => {
-              if (isSelectedLayerInverted) return <ContrastIcon />;
-              return (
-                <ContrastIcon
-                  style={{ filter: "grayscale(100%) opacity(0.7)" }}
-                />
-              );
-            })()}
-          </StyledIconButtonInGroup>
-        </IconGroup>
-        <UploadButtonStyled
-          size="small"
-          onClick={handleUploadImage}
-          variant="outline"
-        >
-          <UploadIcon />
-          Upload Image
-        </UploadButtonStyled>
-      </ControlsHeader>
 
       {selectedLayerId && selectedLayerRawDetails && (
-        <SelectedLayerControlsWrapper>
-          <MainControlTitle>Selected Layer</MainControlTitle>
-          <ControlSection>
-            <OriginHeader>
-              <ControlSectionTitle>Origin</ControlSectionTitle>
-              <ResetButton
-                size="small"
-                onClick={handleResetOrigin}
-                disabled={!selectedLayerRawDetails}
-              >
-                RESET
-              </ResetButton>
-            </OriginHeader>
-            <PositionControlsWrapper>
-              <ArrowButtonsGrid>
-                <div style={{ gridColumn: 1, gridRow: 1 }} />
-                <IconButton
-                  style={{ gridColumn: 2, gridRow: 1 }}
-                  title="Move Up"
-                  onClick={() => handlePositionAdjust("y", -1)}
-                  disabled={!selectedLayerRawDetails}
-                >
-                  <ChevronUpIcon />
-                </IconButton>
-                <div style={{ gridColumn: 3, gridRow: 1 }} />
-                <IconButton
-                  style={{ gridColumn: 1, gridRow: 2 }}
-                  title="Move Left"
-                  onClick={() => handlePositionAdjust("x", -1)}
-                  disabled={!selectedLayerRawDetails}
-                >
-                  <ChevronLeftIcon />
-                </IconButton>
-                <IconButton
-                  style={{ gridColumn: 2, gridRow: 2 }}
-                  title="Center"
-                  onClick={handleCenterPosition}
-                  disabled={!selectedLayerRawDetails}
-                >
-                  <RefreshIcon />
-                </IconButton>
-                <IconButton
-                  style={{ gridColumn: 3, gridRow: 2 }}
-                  title="Move Right"
-                  onClick={() => handlePositionAdjust("x", 1)}
-                  disabled={!selectedLayerRawDetails}
-                >
-                  <ChevronRightIcon />
-                </IconButton>
-                <div style={{ gridColumn: 1, gridRow: 3 }} />
-                <IconButton
-                  style={{ gridColumn: 2, gridRow: 3 }}
-                  title="Move Down"
-                  onClick={() => handlePositionAdjust("y", 1)}
-                  disabled={!selectedLayerRawDetails}
-                >
-                  <ChevronDownIcon />
-                </IconButton>
-                <div style={{ gridColumn: 3, gridRow: 3 }} />
-              </ArrowButtonsGrid>
-              <PositionInputs>
-                <FormGroup>
-                  <label htmlFor={`pp-pos-x-${selectedLayerId}`}>X</label>
-                  <Form.Input
-                    id={`pp-pos-x-${selectedLayerId}`}
-                    type="number"
-                    value={selectedLayerRawDetails.position.x}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                      handlePositionChange("x", e.target.value)
-                    }
-                    disabled={!selectedLayerRawDetails}
-                    aria-label="X Position"
-                  />
-                </FormGroup>
-                <FormGroup>
-                  <label htmlFor={`pp-pos-y-${selectedLayerId}`}>Y</label>
-                  <Form.Input
-                    id={`pp-pos-y-${selectedLayerId}`}
-                    type="number"
-                    value={selectedLayerRawDetails.position.y}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                      handlePositionChange("y", e.target.value)
-                    }
-                    disabled={!selectedLayerRawDetails}
-                    aria-label="Y Position"
-                  />
-                </FormGroup>
-                <FormGroup>
-                  <label htmlFor={`pp-zoom-${selectedLayerId}`}>Zoom</label>
-                  <Form.Input
-                    id={`pp-zoom-${selectedLayerId}`}
-                    type="number"
-                    value={selectedLayerRawDetails.zoom}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                      handleZoomChange(e.target.value)
-                    }
-                    disabled={!selectedLayerRawDetails}
-                    step="0.1"
-                    min="0.1" // Ensure zoom doesn't go to or below zero
-                    aria-label="Zoom Factor"
-                  />
-                </FormGroup>
-              </PositionInputs>
-            </PositionControlsWrapper>
-          </ControlSection>
-          <ControlSection>
-            <ControlSectionTitle>Opacity</ControlSectionTitle>
-            <FormGroup>
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.01"
-                value={selectedLayerRawDetails.opacity}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                  handleOpacityChange(parseFloat(e.target.value))
-                }
-                disabled={!selectedLayerRawDetails}
-                aria-label="Opacity"
-              />
-              <span className="value-display">
-                {`${Math.round(selectedLayerRawDetails.opacity * 100)}%`}
-              </span>
-            </FormGroup>
-          </ControlSection>
-        </SelectedLayerControlsWrapper>
+        <SelectedLayerDetailControls
+          selectedLayer={selectedLayerRawDetails}
+          onOpacityChange={handleOpacityChange}
+          onPositionChange={handlePositionChange}
+          onZoomChange={handleZoomChange}
+          onPositionAdjust={handlePositionAdjust}
+          onCenterPosition={handleCenterPosition}
+          onResetOrigin={handleResetOrigin}
+        />
       )}
 
       <ContentArea vertical horizontal>
-        {rawLayersConfig.length > 0 ? (
-          <LayerList>
-            {rawLayersConfig.map((layer) => (
-              <LayerRow
-                key={layer.id}
-                isSelected={layer.id === selectedLayerId}
-                onClick={() => handleSelectLayer(layer.id)}
-              >
-                <LayerName title={layer.src}>{layer.name}</LayerName>
-                <DeleteLayerButton
-                  title="Delete Layer"
-                  onClick={(e) => handleLayerDelete(layer.id, e)}
-                >
-                  <CloseIcon />
-                </DeleteLayerButton>
-              </LayerRow>
-            ))}
-          </LayerList>
-        ) : (
-          <Placeholder>
-            No layers configured. Add via story parameters or click Upload
-            Image.
-          </Placeholder>
-        )}
+        <LayerListDisplay
+          rawLayersConfig={rawLayersConfig}
+          selectedLayerId={selectedLayerId}
+          onSelectLayer={handleSelectLayer}
+          onDeleteLayer={handleLayerDelete}
+        />
       </ContentArea>
     </PanelWrapper>
   );
