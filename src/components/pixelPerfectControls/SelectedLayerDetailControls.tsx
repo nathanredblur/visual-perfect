@@ -162,7 +162,6 @@ export const SelectedLayerDetailControls: React.FC<
 
   return (
     <SelectedLayerControlsWrapper>
-      <MainControlTitle>Selected Layer</MainControlTitle>
       <ControlSection>
         <OriginHeader>
           <ControlSectionTitle>Origin</ControlSectionTitle>

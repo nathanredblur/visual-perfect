@@ -52,6 +52,7 @@ export const PixelPerfectDecorator: (
   );
   const storyRootRef = useRef<HTMLDivElement>(null);
   const channel = addons.getChannel();
+  const storyId = context.id; // Get current storyId from context
 
   // Refs for draggable layer elements
   const layerRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -70,10 +71,6 @@ export const PixelPerfectDecorator: (
 
   useEffect(() => {
     const handleUpdateLayers = (payload: PixelPerfectUpdatePayload) => {
-      console.log(
-        `[${ADDON_ID}-Preview] Received layer update:`,
-        payload.layers,
-      );
       setCurrentLayers(payload.layers || []);
     };
 
@@ -83,6 +80,13 @@ export const PixelPerfectDecorator: (
       channel.off(EVENTS.UPDATE_PIXEL_PERFECT_LAYERS, handleUpdateLayers);
     };
   }, [channel]);
+
+  // NEW Effect: Decorator signals readiness and requests initial layers
+  useEffect(() => {
+    if (channel && storyId) {
+      channel.emit(EVENTS.REQUEST_INITIAL_LAYERS, { storyId });
+    }
+  }, [channel, storyId]);
 
   // Observe the size of the story's root element to help with layer positioning if needed
   // This is a basic implementation; more robust solutions might be needed for dynamic content.
@@ -276,7 +280,7 @@ export const PixelPerfectDecorator: (
               : isBeingDragged
                 ? "grabbing"
                 : "grab",
-            zIndex: isBeingDragged ? 10000 : 9990, // Bring dragged layer to front
+            zIndex: 9999, // Ensure layers are on top
             width:
               layer.src.startsWith("data:") || layer.src.startsWith("http")
                 ? "auto"
